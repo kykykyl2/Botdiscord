@@ -230,3 +230,13 @@ client.login(config.token).catch(err => {
     console.error('❌ Impossible de se connecter à Discord:', err.message);
     process.exit(1);
 });
+
+// ─── Serveur HTTP keep-alive (requis pour le déploiement Replit) ───────────────
+const http = require('http');
+const PORT = process.env.PORT || 3000;
+http.createServer((req, res) => {
+    res.writeHead(200);
+    res.end('Bot is running.');
+}).listen(PORT, '0.0.0.0', () => {
+    console.log(`[HTTP] Keep-alive server listening on port ${PORT}`);
+});
