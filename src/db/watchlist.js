@@ -46,4 +46,24 @@ function getIds() {
     return readDB().map(a => a.id);
 }
 
-module.exports = { getAll, exists, add, remove, getIds };
+const NOTIFIED_PATH = path.join(__dirname, '../../data/notified.json');
+
+function getNotified() {
+    try {
+        const data = fs.readFileSync(NOTIFIED_PATH, 'utf8');
+        return JSON.parse(data);
+    } catch {
+        return [];
+    }
+}
+
+function addNotified(key) {
+    const list = getNotified();
+    if (!list.includes(key)) {
+        list.push(key);
+        if (list.length > 200) list.shift(); // Garder uniquement les 200 derniers pour éviter un gros fichier
+        fs.writeFileSync(NOTIFIED_PATH, JSON.stringify(list, null, 2), 'utf8');
+    }
+}
+
+module.exports = { getAll, exists, add, remove, getIds, getNotified, addNotified };

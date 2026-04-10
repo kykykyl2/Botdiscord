@@ -88,14 +88,11 @@ async function getAnimeById(id) {
 }
 
 /**
- * Récupérer les animés qui airient dans la prochaine heure ou qui ont airé dans la dernière heure
+ * Récupérer les animés qui airient dans la prochaine heure
+ * Si mediaIds est vide, on récupère TOUS les animes TV japonais du moment.
  */
-async function getAiringToday(mediaIds) {
-  if (!mediaIds || mediaIds.length === 0) return [];
-
+async function getAiringToday(mediaIds = []) {
   const now = Math.floor(Date.now() / 1000);
-  // Fenêtre : Les épisodes sortis dans la dernière heure (-60min) jusqu'à ceux qui sortent dans 5 minutes
-  // Avant, c'était +90min, ce qui annonçait les épisodes bien trop tôt !
   const from = now - 3600;
   const to = now + 900;
 
@@ -105,7 +102,8 @@ async function getAiringToday(mediaIds) {
         airingSchedules(
           mediaId_in: $mediaId_in,
           airingAt_greater: $airingAt_greater,
-          airingAt_lesser: $airingAt_lesser
+          airingAt_lesser: $airingAt_lesser,
+          sort: TIME
         ) {
           id
           episode
@@ -113,6 +111,8 @@ async function getAiringToday(mediaIds) {
           timeUntilAiring
           media {
             id
+            format
+            countryOfOrigin
             title {
               romaji
               english
@@ -128,14 +128,27 @@ async function getAiringToday(mediaIds) {
     }
   `;
 
+  const variables = { airingAt_greater: from, airingAt_lesser: to };
+  if (mediaIds && mediaIds.length > 0) {
+    variables.mediaId_in = mediaIds;
+  }
+
   const response = await axios.post(ANILIST_API, {
     query,
-    variables: { mediaId_in: mediaIds, airingAt_greater: from, airingAt_lesser: to },
+    variables,
   }, {
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
   });
 
-  return response.data.data.Page.airingSchedules;
+  let schedules = response.data.data.Page.airingSchedules;
+
+  // Si on cherche globalement (sans watchlist), filtrer pour ne garder que les animes TV japonais
+  // afin d'éviter le spam de donghua (chinois) ou d'OVA/Spéciaux obscurs.
+  if (!mediaIds || mediaIds.length === 0) {
+    schedules = schedules.filter(s => s.media.format === 'TV' && s.media.countryOfOrigin === 'JP');
+  }
+
+  return schedules;
 }
 
 module.exports = { searchAnime, getAnimeById, getAiringToday };

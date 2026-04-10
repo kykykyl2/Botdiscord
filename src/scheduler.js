@@ -57,7 +57,6 @@ function buildRSSEmbed(item) {
 async function checkAniList(channel, roleMention) {
     try {
         const ids = getIds();
-        if (ids.length === 0) return;
 
         const schedules = await getAiringToday(ids);
         for (const schedule of schedules) {
