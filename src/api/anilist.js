@@ -93,7 +93,8 @@ async function getAnimeById(id) {
  */
 async function getAiringToday(mediaIds = []) {
   const now = Math.floor(Date.now() / 1000);
-  const from = now - 3600;
+  // Récupère les animes sortis depuis les 12 dernières heures (permet de rattraper tout ce qui a été raté quand le bot était éteint)
+  const from = now - (12 * 3600);
   const to = now + 900;
 
   const query = `

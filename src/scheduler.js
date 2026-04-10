@@ -5,9 +5,7 @@ const { getLatestCrunchyroll } = require('./api/crunchyroll');
 const { buildNotifEmbed } = require('./embeds/animeEmbed');
 const config = require('./config');
 
-// ─── Mémoire anti-doublons (session courante) ─────────────────────────────────
-const notifiedAniList = new Set();   // clé: "mediaId-epX"
-const notifiedRSS = new Set();       // clé: URL de l'item
+// ─── Variables globales ────────────────────────────────────────────────────────
 const globalNotified = new Set();    // clé unifiée: "normtitre-epX" pour l'anti-spam croisé
 
 function getNormalizedKey(title, episode) {
@@ -51,14 +49,20 @@ function buildRSSEmbed(item) {
 // ─── Vérification AniList (watchlist) ────────────────────────────────────────
 async function checkAniList(channel, roleMention) {
     try {
+        console.log(`[AniList] 🔎 Recherche de nouveaux épisodes en cours...`);
         const ids = getIds();
 
         const schedules = await getAiringToday(ids);
+        console.log(`[AniList] ℹ️ ${schedules.length} épisode(s) dans la fenêtre de tir trouvés sur l'API.`);
+        
+        let newCount = 0;
         for (const schedule of schedules) {
             const key = `${schedule.media.id}-ep${schedule.episode}`;
             const { getNotified, addNotified } = require('./db/watchlist');
             const alreadyNotified = getNotified();
             if (alreadyNotified.includes(key)) continue;
+            
+            newCount++;
             addNotified(key);
 
             // Ajout au filtre anti-spam global
@@ -70,38 +74,56 @@ async function checkAniList(channel, roleMention) {
             const embed = buildNotifEmbed(schedule, schedule.media);
             const content = roleMention ? `${roleMention} 📢 Nouvel épisode en approche !` : null;
             await channel.send({ content, embeds: [embed] });
-            console.log(`[AniList] Notification : ${schedule.media.title.romaji} Ep ${schedule.episode}`);
+            console.log(`[AniList] ✅ Notification envoyée : ${schedule.media.title.romaji} Ep ${schedule.episode}`);
+        }
+        
+        if (newCount === 0 && schedules.length > 0) {
+            console.log(`[AniList] 💤 Aucun nouveau message envoyé (les ${schedules.length} épisodes ont déjà été notifiés).`);
+        } else if (schedules.length === 0) {
+            console.log(`[AniList] 💤 Aucun épisode à notifier pour le moment.`);
         }
     } catch (err) {
-        console.error('[AniList] Erreur:', err.message);
+        console.error('[AniList] Erreur lors de la recherche:', err.message);
     }
 }
 
 // ─── Vérification Crunchyroll RSS ────────────────────────────────────────────
 async function checkCrunchyroll(channel, roleMention) {
     try {
+        console.log(`[Crunchyroll] 🔎 Recherche de nouveaux épisodes sur le flux RSS...`);
         const items = await getLatestCrunchyroll();
-        const cutoff = Date.now() - 20 * 60 * 1000; // épisodes des 20 dernières minutes
+        
+        if (items.length > 0) {
+            console.log(`[Crunchyroll] ℹ️ ${items.length} épisode(s) remonté(s) par le flux RSS.`);
+        } else {
+            console.log(`[Crunchyroll] 💤 Flux RSS retourné vide ou mis en pause (Cooldown 429).`);
+        }
+
+        // On va chercher jusqu'à 24h en arrière pour ratisser large
+        const cutoff = Date.now() - 24 * 60 * 60 * 1000; 
+        let newCount = 0;
 
         for (const item of items) {
-            if (notifiedRSS.has(item.link)) continue;
+            const { getNotified, addNotified } = require('./db/watchlist');
+            const alreadyNotified = getNotified();
+
+            // Si déjà dans le fichier permanent, on ignore
+            if (alreadyNotified.includes(item.link)) continue;
             if (item.pubDate.getTime() < cutoff) continue;
 
-            // Filtre anti-spam croisé (AniList vs Crunchyroll)
-            const match = item.title.match(/^(.*?)\s*-\s*(?:Épisode|Ep\.?|Episode)\s*(\d+)/i);
-            if (match) {
-                const seriesTitle = match[1];
-                const epNum = match[2];
-            }
-
-            notifiedRSS.add(item.link);
+            newCount++;
+            addNotified(item.link);
             const embed = buildRSSEmbed(item);
             const content = roleMention ? `${roleMention} 🟠 Crunchyroll — Disponible maintenant !` : null;
             await channel.send({ content, embeds: [embed] });
-            console.log(`[Crunchyroll] Notification : ${item.title}`);
+            console.log(`[Crunchyroll] ✅ Notification envoyée : ${item.title}`);
+        }
+
+        if (newCount === 0 && items.length > 0) {
+            console.log(`[Crunchyroll] 💤 Aucun nouvel épisode détecté dans les 20 dernières minutes (ou déjà notifiés).`);
         }
     } catch (err) {
-        console.error('[Crunchyroll] Erreur:', err.message);
+        console.error('[Crunchyroll] Erreur lors de la recherche:', err.message);
     }
 }
 
