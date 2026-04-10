@@ -62,8 +62,10 @@ async function checkAniList(channel, roleMention) {
         const schedules = await getAiringToday(ids);
         for (const schedule of schedules) {
             const key = `${schedule.media.id}-ep${schedule.episode}`;
-            if (notifiedAniList.has(key)) continue;
-            notifiedAniList.add(key);
+            const { getNotified, addNotified } = require('./db/watchlist');
+            const alreadyNotified = getNotified();
+            if (alreadyNotified.includes(key)) continue;
+            addNotified(key);
 
             // Ajout au filtre anti-spam global
             const romajiKey = getNormalizedKey(schedule.media.title.romaji, schedule.episode);
@@ -96,12 +98,6 @@ async function checkCrunchyroll(channel, roleMention) {
             if (match) {
                 const seriesTitle = match[1];
                 const epNum = match[2];
-                const crKey = getNormalizedKey(seriesTitle, epNum);
-                
-                if (globalNotified.has(crKey)) {
-                    continue; // Empêche de spammer si AniList l'a déjà annoncé
-                }
-                globalNotified.add(crKey);
             }
 
             notifiedRSS.add(item.link);
