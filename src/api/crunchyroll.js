@@ -8,11 +8,18 @@ const CR_FEEDS = [
     'https://www.crunchyroll.com/rss/anime?lang=frFR', // France
 ];
 
+let crunchyrollCooldown = 0;
+
 /**
  * Récupère les épisodes récents depuis Crunchyroll RSS
  * Retourne un tableau d'objets { title, link, pubDate, seriesTitle, episodeTitle }
  */
 async function getLatestCrunchyroll() {
+    // Si on est en cooldown (suite à une erreur 429), on ignore les requêtes
+    if (Date.now() < crunchyrollCooldown) {
+        return [];
+    }
+
     const items = [];
 
     for (const url of CR_FEEDS) {
@@ -33,6 +40,12 @@ async function getLatestCrunchyroll() {
             }
         } catch (err) {
             console.warn(`[Crunchyroll RSS] Erreur sur ${url}:`, err.message);
+            // Si on se fait bloquer par la protection ou le rate limit, on met en pause
+            if (err.message.includes('429') || err.message.includes('403')) {
+                console.warn('[Crunchyroll RSS] Blocage Cloudflare / Limite atteinte (429/403). Pause des requêtes pendant 2 heures pour éviter de spammer.');
+                crunchyrollCooldown = Date.now() + 2 * 60 * 60 * 1000; // 2 heures
+                break; // Arrêter la boucle pour ne pas essayer l'URL suivante
+            }
         }
     }
 
