@@ -142,8 +142,8 @@ async function handlePrefixCommand(message) {
             return message.reply({ embeds: [embed] });
         }
 
-        // !test
-        if (commandName === 'test') {
+        // !simuler
+        if (commandName === 'simuler') {
             const channel = message.client.channels.cache.get(config.notifChannelId);
             if (!channel) return message.reply("❌ Impossible de trouver le channel de notification spécifié dans la configuration.");
             
@@ -151,26 +151,66 @@ async function handlePrefixCommand(message) {
             const role = message.guild.roles.cache.find(r => r.name === config.animeNewsRoleName);
             const roleMention = role ? `<@&${role.id}> ` : '';
 
+            message.reply("⏳ Déclenchement d'une simulation grandeur nature (récupération de vrais épisodes sortis aujourd'hui)...");
+
+            // --- 1. Simulation AniList (Vrai anime d'aujourd'hui) ---
             const { buildNotifEmbed } = require('./embeds/animeEmbed');
-            
-            // On récupère dynamiquement Jujutsu Kaisen pour avoir une image 100% valide (fini les liens expirés)
-            const animeTest = await getAnimeById(113415).catch(() => null);
-            
-            const mockSchedule = {
-                episode: 12,
-                airingAt: Math.floor(Date.now() / 1000),
-                timeUntilAiring: 0,
-            };
-            const mockMedia = {
-                id: 113415,
-                title: { romaji: 'Jujutsu Kaisen (Test)', english: 'Jujutsu Kaisen (Test)' },
-                coverImage: animeTest ? animeTest.coverImage : { large: 'https://upload.wikimedia.org/wikipedia/commons/3/33/Image-missing.svg', color: '#0070C0' },
-                siteUrl: animeTest ? animeTest.siteUrl : 'https://anilist.co/anime/113415/Jujutsu-Kaisen/'
-            };
-            
-            const embed = buildNotifEmbed(mockSchedule, mockMedia);
-            await channel.send({ content: `${roleMention}📢 **[Simulation]** Nouvel épisode en approche !`, embeds: [embed] });
-            return message.reply("✅ Test simulé (avec ping et affiche fraîche) envoyé avec succès !");
+            const axios = require('axios');
+            try {
+                const now = Math.floor(Date.now() / 1000);
+                const from = now - (24 * 3600); // 24h en arrière
+                const queryAniList = `
+                    query ($from: Int, $to: Int) {
+                        Page(perPage: 20) {
+                            airingSchedules(airingAt_greater: $from, airingAt_lesser: $to, sort: TIME_DESC) {
+                                id episode airingAt timeUntilAiring
+                                media { id format countryOfOrigin title { romaji english } coverImage { large color } siteUrl }
+                            }
+                        }
+                    }
+                `;
+                const res = await axios.post('https://graphql.anilist.co', {
+                    query: queryAniList, variables: { from, to: now }
+                });
+                const schedules = res.data.data.Page.airingSchedules.filter(s => s.media.format === 'TV' && s.media.countryOfOrigin === 'JP');
+                
+                if (schedules.length > 0) {
+                    const realSchedule = schedules[0]; // Le plus récent
+                    const embed = buildNotifEmbed(realSchedule, realSchedule.media);
+                    await channel.send({ content: `${roleMention}📢 **[SIMULATION ANILIST]** Nouvel épisode en approche !`, embeds: [embed] });
+                }
+            } catch (err) {
+                console.error("Erreur simulation AniList:", err.message);
+            }
+
+            // --- 2. Simulation Crunchyroll (Vrai dernier item du RSS) ---
+            const { getLatestCrunchyroll } = require('./api/crunchyroll');
+            const { EmbedBuilder } = require('discord.js');
+            try {
+                // On met le cooldown à 0 temporairement juste pour être sûr que ça passe pour le test
+                const items = await getLatestCrunchyroll();
+                if (items.length > 0) {
+                    const item = items[0];
+                    const embed = new EmbedBuilder()
+                        .setColor(0xF47521)
+                        .setAuthor({ name: '🟠 Crunchyroll — Simulation !' })
+                        .setTitle(item.title)
+                        .setURL(item.link)
+                        .addFields(
+                            { name: '🕐 Disponible depuis', value: `<t:${Math.floor(item.pubDate.getTime() / 1000)}:R>`, inline: true },
+                            { name: '🇫🇷 Format', value: 'VOSTFR', inline: true },
+                        )
+                        .setTimestamp(item.pubDate);
+                    if (item.image) embed.setImage(item.image);
+                    
+                    await channel.send({ content: `${roleMention}🟠 Crunchyroll — **[SIMULATION]** Disponible maintenant !`, embeds: [embed] });
+                } else {
+                    await channel.send("🟠 *Crunchyroll n'a retourné aucun item ou est bloqué (429).*");
+                }
+            } catch (err) {
+                console.error("Erreur simulation Crunchyroll:", err.message);
+            }
+            return;
         }
 
         // !help

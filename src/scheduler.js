@@ -1,4 +1,3 @@
-const cron = require('node-cron');
 const { EmbedBuilder } = require('discord.js');
 const { getIds } = require('./db/watchlist');
 const { getAiringToday } = require('./api/anilist');
@@ -133,18 +132,31 @@ async function checkAll(client) {
     }
 }
 
+function scheduleNext(client) {
+    // Délai aléatoire entre 10 et 17 minutes (en millisecondes)
+    const minMs = 10 * 60 * 1000;
+    const maxMs = 17 * 60 * 1000;
+    const delay = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
+
+    const nextTime = new Date(Date.now() + delay).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    console.log(`[Scheduler] 🕒 Prochaine vérification programmée à ${nextTime} (dans ${(delay/60000).toFixed(1)} min)`);
+
+    setTimeout(async () => {
+        console.log('[Scheduler] 🔄 Vérification en cours (Crunchyroll + AniList)...');
+        await checkAll(client);
+        scheduleNext(client);
+    }, delay);
+}
+
 // ─── Démarrage du scheduler ───────────────────────────────────────────────────
 function startScheduler(client, channelId) {
-    // Toutes les 15 minutes
-    cron.schedule('*/15 * * * *', () => {
-        console.log('[Scheduler] 🔄 Vérification Crunchyroll + AniList...');
-        checkAll(client);
-    });
-
-    console.log('[Scheduler] ✅ Démarré — vérification toutes les 15 minutes (Crunchyroll + AniList).');
+    console.log('[Scheduler] ✅ Démarré — vérification avec intervalles aléatoires (Anti-Bot).');
 
     // Première vérification après 8s (laisser le bot se connecter)
-    setTimeout(() => checkAll(client), 8000);
+    setTimeout(async () => {
+        await checkAll(client);
+        scheduleNext(client);
+    }, 8000);
 }
 
 module.exports = { startScheduler };
