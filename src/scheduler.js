@@ -3,7 +3,6 @@ const { EmbedBuilder } = require('discord.js');
 const { getIds } = require('./db/watchlist');
 const { getAiringToday } = require('./api/anilist');
 const { getLatestCrunchyroll } = require('./api/crunchyroll');
-const { getLatestADN } = require('./api/adn');
 const { buildNotifEmbed } = require('./embeds/animeEmbed');
 const config = require('./config');
 
@@ -33,19 +32,16 @@ async function getAnimeNewsRole(client) {
 
 // ─── Embed RSS (Crunchyroll / ADN) ────────────────────────────────────────────
 function buildRSSEmbed(item) {
-    const isCR = item.source === 'Crunchyroll';
-    const color = isCR ? 0xF47521 : 0x0070C0; // orange CR / bleu ADN
-
     const embed = new EmbedBuilder()
-        .setColor(color)
+        .setColor(0xF47521)
         .setAuthor({
-            name: isCR ? '🟠 Crunchyroll — Nouvel épisode !' : '🔵 ADN — Nouvel épisode !',
+            name: '🟠 Crunchyroll — Nouvel épisode !',
         })
         .setTitle(item.title)
         .setURL(item.link)
         .addFields(
             { name: '🕐 Disponible depuis', value: `<t:${Math.floor(item.pubDate.getTime() / 1000)}:R>`, inline: true },
-            { name: '🇫🇷 Format', value: isCR ? 'VOSTFR' : 'VOSTFR / VF', inline: true },
+            { name: '🇫🇷 Format', value: 'VOSTFR', inline: true },
         )
         .setTimestamp(item.pubDate);
 
@@ -110,26 +106,6 @@ async function checkCrunchyroll(channel, roleMention) {
     }
 }
 
-// ─── Vérification ADN RSS ─────────────────────────────────────────────────────
-async function checkADN(channel, roleMention) {
-    try {
-        const items = await getLatestADN();
-        const cutoff = Date.now() - 20 * 60 * 1000;
-
-        for (const item of items) {
-            if (notifiedRSS.has(item.link)) continue;
-            if (item.pubDate.getTime() < cutoff) continue;
-
-            notifiedRSS.add(item.link);
-            const embed = buildRSSEmbed(item);
-            const content = roleMention ? `${roleMention} 🔵 ADN — Disponible maintenant !` : null;
-            await channel.send({ content, embeds: [embed] });
-            console.log(`[ADN] Notification : ${item.title}`);
-        }
-    } catch (err) {
-        console.error('[ADN] Erreur:', err.message);
-    }
-}
 
 // ─── Boucle principale ────────────────────────────────────────────────────────
 async function checkAll(client) {
@@ -151,7 +127,6 @@ async function checkAll(client) {
         await Promise.all([
             checkAniList(channel, roleMention),
             checkCrunchyroll(channel, roleMention),
-            checkADN(channel, roleMention),
         ]);
     } catch (err) {
         console.error('[Scheduler] Erreur globale:', err.message);
@@ -162,11 +137,11 @@ async function checkAll(client) {
 function startScheduler(client, channelId) {
     // Toutes les 15 minutes
     cron.schedule('*/15 * * * *', () => {
-        console.log('[Scheduler] 🔄 Vérification Crunchyroll + ADN + AniList...');
+        console.log('[Scheduler] 🔄 Vérification Crunchyroll + AniList...');
         checkAll(client);
     });
 
-    console.log('[Scheduler] ✅ Démarré — vérification toutes les 15 minutes (Crunchyroll + ADN + AniList).');
+    console.log('[Scheduler] ✅ Démarré — vérification toutes les 15 minutes (Crunchyroll + AniList).');
 
     // Première vérification après 8s (laisser le bot se connecter)
     setTimeout(() => checkAll(client), 8000);
